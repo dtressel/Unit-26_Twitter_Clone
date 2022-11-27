@@ -26,7 +26,8 @@ from app import app, CURR_USER_KEY
 # once for all tests --- in each test, we'll delete the data
 # and create fresh new clean test data
 
-db.create_all()
+with app.app_context():
+    db.create_all()
 
 # Don't have WTForms use CSRF at all, since it's a pain to test
 
@@ -39,17 +40,18 @@ class MessageViewTestCase(TestCase):
     def setUp(self):
         """Create test client, add sample data."""
 
-        User.query.delete()
-        Message.query.delete()
+        with app.app_context():
+            User.query.delete()
+            Message.query.delete()
 
-        self.client = app.test_client()
+            self.client = app.test_client()
 
-        self.testuser = User.signup(username="testuser",
-                                    email="test@test.com",
-                                    password="testuser",
-                                    image_url=None)
+            self.testuser = User.signup(username="testuser",
+                                            email="test@test.com",
+                                            password="testuser",
+                                            image_url=None)
 
-        db.session.commit()
+            db.session.commit()
 
     def test_add_message(self):
         """Can use add a message?"""
@@ -57,9 +59,12 @@ class MessageViewTestCase(TestCase):
         # Since we need to change the session to mimic logging in,
         # we need to use the changing-session trick:
 
+        with app.app_context():
+            user = User.query.filter_by(username="testuser").first()
+
         with self.client as c:
             with c.session_transaction() as sess:
-                sess[CURR_USER_KEY] = self.testuser.id
+                sess[CURR_USER_KEY] = user.id
 
             # Now, that session setting is saved, so we can have
             # the rest of ours test
@@ -71,3 +76,45 @@ class MessageViewTestCase(TestCase):
 
             msg = Message.query.one()
             self.assertEqual(msg.text, "Hello")
+
+    def test_show_messages(self):
+        """Does the message page get rendered and show the message?"""
+
+        with app.app_context():
+            user = User.query.filter_by(username="testuser").first()
+            msg = Message(text = 'Squishy', user_id = user.id)
+            db.session.add(msg)
+            db.session.commit()
+
+            with self.client as c:
+                resp = c.get(f'/messages/{msg.id}')
+                html = resp.get_data(as_text=True)
+
+                self.assertEqual(resp.status_code, 200)
+                self.assertIn('Squishy', html)
+                self.assertIn('testuser', html)
+
+    def test_delete_message(self):
+        """Does a message get deleted?"""
+
+        with app.app_context():
+            user = User.query.filter_by(username="testuser").first()
+            msg = Message(text = 'Please delete me', user_id = user.id)
+            db.session.add(msg)
+            db.session.commit()
+
+            with self.client as c:
+                with c.session_transaction() as sess:
+                    sess[CURR_USER_KEY] = user.id
+
+                self.assertEqual(Message.query.count(), 1)
+
+                resp = c.post(f'/messages/{msg.id}/delete')
+
+                self.assertEqual(resp.status_code, 302)
+                self.assertEqual(Message.query.count(), 0)
+
+
+
+
+
