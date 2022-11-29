@@ -94,7 +94,7 @@ class User(db.Model):
         nullable=False,
     )
 
-    messages = db.relationship('Message')
+    messages = db.relationship('Message', cascade="all, delete", backref = "user")
 
     followers = db.relationship(
         "User",
@@ -196,8 +196,6 @@ class Message(db.Model):
         db.ForeignKey('users.id', ondelete='CASCADE'),
         nullable=False,
     )
-
-    user = db.relationship('User')
 
 
 def connect_db(app):
